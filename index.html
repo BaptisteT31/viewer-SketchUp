@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Viewer SketchUp (GLB)</title>
+  <title>Viewer</title>
   <link rel="stylesheet" href="./styles.css" />
 
   <script type="importmap">
@@ -18,13 +18,8 @@
 
 <body>
   <header class="topbar">
-    <div class="left">
-      <h1>Viewer SketchUp</h1>
-      <p>
-        Chargement automatique des modèles listés dans <strong>models/manifest.json</strong>.
-        Vous pouvez aussi glisser-déposer un <strong>.glb</strong>.
-      </p>
-    </div>
+    <!-- Texte supprimé à votre demande -->
+    <div class="left"></div>
 
     <div class="right">
       <label class="btn">
@@ -38,7 +33,6 @@
 
   <section class="panel">
     <div class="controls">
-      <!-- Grille OFF par défaut -->
       <label class="switch">
         <input id="gridToggle" type="checkbox" />
         <span>Grille</span>
@@ -49,11 +43,24 @@
         <span>Axes</span>
       </label>
 
-      <!-- Rotation auto ON par défaut -->
       <label class="switch">
         <input id="autoRotateToggle" type="checkbox" checked />
         <span>Rotation auto</span>
       </label>
+    </div>
+
+    <div class="sliders">
+      <div class="slider-row">
+        <label for="lightIntensity">Intensité lumineuse</label>
+        <input id="lightIntensity" type="range" min="0" max="2.5" step="0.05" value="1.35" />
+        <span id="lightIntensityVal" class="slider-val">1.35</span>
+      </div>
+
+      <div class="slider-row">
+        <label for="sunAngle">Position du soleil</label>
+        <input id="sunAngle" type="range" min="0" max="360" step="1" value="45" />
+        <span id="sunAngleVal" class="slider-val">45°</span>
+      </div>
     </div>
 
     <div class="hint">

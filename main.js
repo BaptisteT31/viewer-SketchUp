@@ -14,6 +14,11 @@ const gridToggle = document.getElementById("gridToggle");
 const axesToggle = document.getElementById("axesToggle");
 const autoRotateToggle = document.getElementById("autoRotateToggle");
 
+const lightIntensity = document.getElementById("lightIntensity");
+const lightIntensityVal = document.getElementById("lightIntensityVal");
+const sunAngle = document.getElementById("sunAngle");
+const sunAngleVal = document.getElementById("sunAngleVal");
+
 const modelList = document.getElementById("modelList");
 const statusEl = document.getElementById("status");
 
@@ -28,12 +33,16 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+// Un rendu plus “clair” (tone mapping + exposure)
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
 const scene = new THREE.Scene();
-// Fond légèrement plus lumineux
-scene.background = new THREE.Color(0x141c2f);
+// Fond plus lumineux
+scene.background = new THREE.Color(0x1b2742);
 
 const camera = new THREE.PerspectiveCamera(50, 2, 0.01, 5000);
-camera.position.set(5, 4, 6);
+camera.position.set(6, 5, 8);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -41,41 +50,41 @@ controls.dampingFactor = 0.08;
 controls.target.set(0, 1, 0);
 
 // ----------------------
-// Lumières
+// Lumières (pilotées par slider)
 // ----------------------
-scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.0));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x2a3a55, 1.0);
+scene.add(hemi);
 
-// Lumière “directionnelle” d’ambiance (légère)
-const dir = new THREE.DirectionalLight(0xffffff, 0.7);
-dir.position.set(8, 12, 6);
-dir.castShadow = false; // on laisse la zénithale gérer les ombres projetées
-scene.add(dir);
+// Petit fill directionnel (sans ombres)
+const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+fill.position.set(10, 12, 10);
+fill.castShadow = false;
+scene.add(fill);
 
-// Lumière zénithale pour lire les ombres sur le sol (≈ 10m au-dessus)
-const topLight = new THREE.DirectionalLight(0xffffff, 1.15);
-topLight.position.set(0, 10, 0);
-topLight.target.position.set(0, 0, 0);
-scene.add(topLight);
-scene.add(topLight.target);
+// “Soleil” directionnel (avec ombres) : position pilotée par un slider
+const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
 
-topLight.castShadow = true;
-topLight.shadow.mapSize.set(2048, 2048);
+sun.target.position.set(0, 0, 0);
+scene.add(sun.target);
 
-// Zone d’ombre adaptée à ~40x40m (avec marge)
-topLight.shadow.camera.near = 0.5;
-topLight.shadow.camera.far = 60;
-topLight.shadow.camera.left = -30;
-topLight.shadow.camera.right = 30;
-topLight.shadow.camera.top = 30;
-topLight.shadow.camera.bottom = -30;
+// Zone d’ombre adaptée à une emprise ~80x80m (2× 40x40) avec marge
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 140;
+sun.shadow.camera.left = -70;
+sun.shadow.camera.right = 70;
+sun.shadow.camera.top = 70;
+sun.shadow.camera.bottom = -70;
 
 // ----------------------
 // Helpers
 // ----------------------
-const grid = new THREE.GridHelper(50, 50);
+const grid = new THREE.GridHelper(100, 100); // 2× plus grand
 grid.material.opacity = 0.25;
 grid.material.transparent = true;
-grid.visible = false; // Grille OFF par défaut
+grid.visible = false;
 scene.add(grid);
 
 const axes = new THREE.AxesHelper(2);
@@ -84,6 +93,7 @@ scene.add(axes);
 
 // ----------------------
 // Sol “herbe” (procédural) + reçoit les ombres
+// (2× plus grand : ~100x100m)
 // ----------------------
 function createGrassTexture(size = 256) {
   const c = document.createElement("canvas");
@@ -91,12 +101,10 @@ function createGrassTexture(size = 256) {
   c.height = size;
   const ctx = c.getContext("2d");
 
-  // Base verte
   ctx.fillStyle = "#2f6b2f";
   ctx.fillRect(0, 0, size, size);
 
-  // Variations (taches)
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 14000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
     const r = Math.random() * 2.0 + 0.5;
@@ -109,12 +117,11 @@ function createGrassTexture(size = 256) {
     ctx.fill();
   }
 
-  // Quelques brins (traits fins)
   ctx.globalAlpha = 0.18;
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 1000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const len = 3 + Math.random() * 9;
+    const len = 3 + Math.random() * 10;
     const ang = Math.random() * Math.PI * 2;
     ctx.strokeStyle = Math.random() > 0.5 ? "#a7d36b" : "#3c8a3c";
     ctx.lineWidth = 1;
@@ -129,8 +136,10 @@ function createGrassTexture(size = 256) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  // Répétition modérée pour limiter le scintillement (moiré)
-  tex.repeat.set(4, 4);
+
+  // Sur une surface plus grande, on répète plus pour éviter une herbe “géante”
+  tex.repeat.set(8, 8);
+
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   tex.needsUpdate = true;
   return tex;
@@ -139,25 +148,26 @@ function createGrassTexture(size = 256) {
 const grassTex = createGrassTexture(256);
 
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(50, 50), // ~40x40m + marge
+  new THREE.PlaneGeometry(100, 100),
   new THREE.MeshStandardMaterial({
     map: grassTex,
     roughness: 1.0,
     metalness: 0.0,
-    polygonOffset: true,        // aide à éviter le z-fighting résiduel
+    polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1
   })
 );
 ground.rotation.x = -Math.PI / 2;
-ground.position.y = 0; // sol au niveau 0
+ground.position.y = 0;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Loader
+// ----------------------
+// Loader + state
+// ----------------------
 const loader = new GLTFLoader();
 
-// State
 let loadedModels = []; // { name, root, box }
 let defaultCameraState = null;
 
@@ -175,17 +185,14 @@ function traverseForShadows(obj) {
     if (n.isMesh) {
       n.castShadow = true;
       n.receiveShadow = true;
-      if (n.material) n.material.side = THREE.DoubleSide; // exports SketchUp
+      if (n.material) n.material.side = THREE.DoubleSide;
     }
   });
 }
 
-// Détecte et masque un “sol” importé dans le GLB (très large et très plat),
-// qui est souvent la cause du clignotement (z-fighting) avec notre sol.
+// Masque un sol importé dans le GLB (cause classique de z-fighting)
 function hideLikelyGroundMeshes(root) {
   root.updateMatrixWorld(true);
-
-  let hidden = 0;
 
   root.traverse((n) => {
     if (!n.isMesh) return;
@@ -196,22 +203,16 @@ function hideLikelyGroundMeshes(root) {
     box.getSize(size);
     box.getCenter(center);
 
-    // Critères “sol” : très plat + très large + proche de y=0
     const isFlat = size.y < 0.15;
-    const isLarge = size.x > 20 && size.z > 20;
+    const isLarge = size.x > 25 && size.z > 25;
     const nearZero = Math.abs(center.y) < 1.0;
 
     if (isFlat && isLarge && nearZero) {
       n.visible = false;
       n.castShadow = false;
       n.receiveShadow = false;
-      hidden += 1;
     }
   });
-
-  if (hidden > 0) {
-    console.log(`[viewer] Sol importé masqué (meshes): ${hidden}`);
-  }
 }
 
 function computeBox(root) {
@@ -259,16 +260,14 @@ function arrangeModelsRow() {
     const size = new THREE.Vector3();
     box.getSize(size);
 
-    // recentrer sur le centre
     const center = new THREE.Vector3();
     box.getCenter(center);
     m.root.position.sub(center);
 
-    // poser le modèle sur le sol (y=0)
+    // Pose au sol
     const boxAfterCenter = computeBox(m.root);
     m.root.position.y -= boxAfterCenter.min.y;
 
-    // aligner en rangée X
     m.root.position.x += cursorX + size.x / 2;
     cursorX += size.x + gap;
 
@@ -283,7 +282,7 @@ function arrangeModelsRow() {
 
 function addModelRoot(name, root) {
   traverseForShadows(root);
-  hideLikelyGroundMeshes(root); // << supprime le sol “buggy” importé si présent
+  hideLikelyGroundMeshes(root);
   scene.add(root);
 
   loadedModels.push({ name, root, box: computeBox(root) });
@@ -309,7 +308,7 @@ function addModelFromArrayBuffer(name, arrayBuffer) {
 
 function addModelFromURL(name, url) {
   return new Promise((resolve, reject) => {
-    const safeUrl = encodeURI(url); // accents/espaces
+    const safeUrl = encodeURI(url);
 
     setStatus(`Chargement : ${name}…`);
     loader.load(
@@ -405,11 +404,60 @@ function resizeRendererToDisplaySize() {
   }
 }
 
+// ----------------------
+// Sliders : intensité + position soleil
+// ----------------------
+const base = {
+  hemi: 1.15,
+  fill: 0.65,
+  sun: 1.25
+};
+
+// Soleil : cercle autour du centre, hauteur fixe (votre scène : 4–6 m haut)
+const sunParams = {
+  radius: 60,   // adapté à ~80x80m
+  height: 30    // au-dessus des tables (4–6m), pour une lecture d’ombres propre
+};
+
+function updateLightingFromUI() {
+  const intensity = parseFloat(lightIntensity.value);
+  lightIntensityVal.textContent = intensity.toFixed(2);
+
+  const angDeg = parseInt(sunAngle.value, 10);
+  sunAngleVal.textContent = `${angDeg}°`;
+
+  // Intensités
+  hemi.intensity = base.hemi * intensity;
+  fill.intensity = base.fill * intensity;
+  sun.intensity = base.sun * intensity;
+
+  // Position du soleil (azimuth)
+  const a = THREE.MathUtils.degToRad(angDeg);
+  const x = Math.cos(a) * sunParams.radius;
+  const z = Math.sin(a) * sunParams.radius;
+
+  sun.position.set(x, sunParams.height, z);
+  sun.target.position.set(0, 0, 0);
+  sun.target.updateMatrixWorld();
+
+  // Demande un refresh des ombres
+  sun.shadow.needsUpdate = true;
+}
+
+lightIntensity.addEventListener("input", updateLightingFromUI);
+sunAngle.addEventListener("input", updateLightingFromUI);
+
+// Init sliders -> applique valeurs par défaut
+updateLightingFromUI();
+
+// ----------------------
+// Animate
+// ----------------------
 function animate() {
   resizeRendererToDisplaySize();
 
   controls.autoRotate = autoRotateToggle.checked;
-  controls.autoRotateSpeed = 0.20; // plus lent
+  controls.autoRotateSpeed = 0.18; // lent
 
   controls.update();
   renderer.render(scene, camera);
