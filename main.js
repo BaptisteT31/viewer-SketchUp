@@ -33,12 +33,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-// Un rendu plus “clair” (tone mapping + exposure)
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.15;
 
 const scene = new THREE.Scene();
-// Fond plus lumineux
 scene.background = new THREE.Color(0x1b2742);
 
 const camera = new THREE.PerspectiveCamera(50, 2, 0.01, 5000);
@@ -50,19 +48,18 @@ controls.dampingFactor = 0.08;
 controls.target.set(0, 1, 0);
 
 // ----------------------
-// Lumières (pilotées par slider)
+// Lumières (pilotées)
 // ----------------------
 const hemi = new THREE.HemisphereLight(0xffffff, 0x2a3a55, 1.0);
 scene.add(hemi);
 
-// Petit fill directionnel (sans ombres)
-const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+const fill = new THREE.DirectionalLight(0xffffff, 0.65);
 fill.position.set(10, 12, 10);
 fill.castShadow = false;
 scene.add(fill);
 
-// “Soleil” directionnel (avec ombres) : position pilotée par un slider
-const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+// Soleil (ombres)
+const sun = new THREE.DirectionalLight(0xffffff, 1.25);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
@@ -70,18 +67,18 @@ scene.add(sun);
 sun.target.position.set(0, 0, 0);
 scene.add(sun.target);
 
-// Zone d’ombre adaptée à une emprise ~80x80m (2× 40x40) avec marge
+// Frustum ombres pour ~80x80m (40x40 * 2) + marge
 sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 140;
-sun.shadow.camera.left = -70;
-sun.shadow.camera.right = 70;
-sun.shadow.camera.top = 70;
-sun.shadow.camera.bottom = -70;
+sun.shadow.camera.far = 160;
+sun.shadow.camera.left = -80;
+sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80;
+sun.shadow.camera.bottom = -80;
 
 // ----------------------
 // Helpers
 // ----------------------
-const grid = new THREE.GridHelper(100, 100); // 2× plus grand
+const grid = new THREE.GridHelper(100, 100);
 grid.material.opacity = 0.25;
 grid.material.transparent = true;
 grid.visible = false;
@@ -92,8 +89,7 @@ axes.visible = false;
 scene.add(axes);
 
 // ----------------------
-// Sol “herbe” (procédural) + reçoit les ombres
-// (2× plus grand : ~100x100m)
+// Sol herbe (procédural)
 // ----------------------
 function createGrassTexture(size = 256) {
   const c = document.createElement("canvas");
@@ -136,10 +132,7 @@ function createGrassTexture(size = 256) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-
-  // Sur une surface plus grande, on répète plus pour éviter une herbe “géante”
   tex.repeat.set(8, 8);
-
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   tex.needsUpdate = true;
   return tex;
@@ -171,6 +164,22 @@ const loader = new GLTFLoader();
 let loadedModels = []; // { name, root, box }
 let defaultCameraState = null;
 
+// Centre réel de la scène (sert pour cibler le soleil)
+const sceneCenter = new THREE.Vector3(0, 0, 0);
+
+// Paramètres soleil (autour du centre)
+const sunParams = {
+  radius: 80,  // ~ scène 2× (80x80) + marge
+  height: 35   // au-dessus des tables (4–6m) pour ombres lisibles
+};
+
+// Bases d’intensité (multipliées par slider)
+const base = {
+  hemi: 1.2,
+  fill: 0.8,
+  sun: 1.8
+};
+
 function setModelListUI() {
   modelList.innerHTML = "";
   for (const m of loadedModels) {
@@ -188,6 +197,19 @@ function traverseForShadows(obj) {
       if (n.material) n.material.side = THREE.DoubleSide;
     }
   });
+}
+
+// Important : si le GLB contient des lumières, elles peuvent “annuler” l’effet des sliders.
+function disableImportedLights(root) {
+  let count = 0;
+  root.traverse((n) => {
+    if (n && n.isLight) {
+      n.visible = false;
+      n.intensity = 0;
+      count++;
+    }
+  });
+  if (count > 0) console.log(`[viewer] Lumières importées désactivées: ${count}`);
 }
 
 // Masque un sol importé dans le GLB (cause classique de z-fighting)
@@ -239,6 +261,10 @@ function fitCameraToBox(box, { padding = 1.25 } = {}) {
   controls.target.copy(center);
   controls.update();
 
+  // Met à jour le centre de scène utilisé par le soleil
+  sceneCenter.copy(center);
+  ground.position.set(center.x, 0, center.z);
+
   if (!defaultCameraState) {
     defaultCameraState = {
       position: camera.position.clone(),
@@ -281,6 +307,7 @@ function arrangeModelsRow() {
 }
 
 function addModelRoot(name, root) {
+  disableImportedLights(root);
   traverseForShadows(root);
   hideLikelyGroundMeshes(root);
   scene.add(root);
@@ -404,21 +431,7 @@ function resizeRendererToDisplaySize() {
   }
 }
 
-// ----------------------
-// Sliders : intensité + position soleil
-// ----------------------
-const base = {
-  hemi: 1.15,
-  fill: 0.65,
-  sun: 1.25
-};
-
-// Soleil : cercle autour du centre, hauteur fixe (votre scène : 4–6 m haut)
-const sunParams = {
-  radius: 60,   // adapté à ~80x80m
-  height: 30    // au-dessus des tables (4–6m), pour une lecture d’ombres propre
-};
-
+// Mise à jour lumière : appelée à chaque frame (donc toujours effectif)
 function updateLightingFromUI() {
   const intensity = parseFloat(lightIntensity.value);
   lightIntensityVal.textContent = intensity.toFixed(2);
@@ -426,29 +439,21 @@ function updateLightingFromUI() {
   const angDeg = parseInt(sunAngle.value, 10);
   sunAngleVal.textContent = `${angDeg}°`;
 
-  // Intensités
+  // Intensités (amplifiées => changement très visible)
   hemi.intensity = base.hemi * intensity;
   fill.intensity = base.fill * intensity;
   sun.intensity = base.sun * intensity;
 
-  // Position du soleil (azimuth)
+  // Soleil : tourne autour du centre réel de la scène
   const a = THREE.MathUtils.degToRad(angDeg);
-  const x = Math.cos(a) * sunParams.radius;
-  const z = Math.sin(a) * sunParams.radius;
-
+  const x = sceneCenter.x + Math.cos(a) * sunParams.radius;
+  const z = sceneCenter.z + Math.sin(a) * sunParams.radius;
   sun.position.set(x, sunParams.height, z);
-  sun.target.position.set(0, 0, 0);
+
+  // Vise le centre de scène
+  sun.target.position.set(sceneCenter.x, sceneCenter.y, sceneCenter.z);
   sun.target.updateMatrixWorld();
-
-  // Demande un refresh des ombres
-  sun.shadow.needsUpdate = true;
 }
-
-lightIntensity.addEventListener("input", updateLightingFromUI);
-sunAngle.addEventListener("input", updateLightingFromUI);
-
-// Init sliders -> applique valeurs par défaut
-updateLightingFromUI();
 
 // ----------------------
 // Animate
@@ -456,8 +461,11 @@ updateLightingFromUI();
 function animate() {
   resizeRendererToDisplaySize();
 
+  // Applique les sliders en continu
+  updateLightingFromUI();
+
   controls.autoRotate = autoRotateToggle.checked;
-  controls.autoRotateSpeed = 0.18; // lent
+  controls.autoRotateSpeed = 0.18;
 
   controls.update();
   renderer.render(scene, camera);
